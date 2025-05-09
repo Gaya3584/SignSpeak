@@ -1,7 +1,11 @@
 import cv2 # Import OpenCV for video capture
 import tkinter as tk # Import Tkinter for GUI
 from PIL import Image, ImageTk # Import Python Imaging Library for image processing
+import mediapipe as mp # Import MediaPipe for hand tracking
 
+
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 
 class SignLanguageApp: # Define the main application class
     def __init__(self, root): # Initialize the GUI window
@@ -33,6 +37,8 @@ class SignLanguageApp: # Define the main application class
         self.paused = False # Flag to check if camera is paused
         self.capture = None # Video capture object
 
+        self.hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5)
+
     def start_camera(self): # Method to start the camera
         if not self.camera_on: # If camera is not already on
             self.capture = cv2.VideoCapture(0) # Start video capture from the webcam
@@ -41,7 +47,7 @@ class SignLanguageApp: # Define the main application class
             self.update_frame() # Start updating frames
         elif self.camera_on and self.paused: # If camera is paused
             self.paused = False # Just resume frame updates
-        
+
     def pause_camera(self): # Method to pause/resume the camera
         if self.camera_on: # Only toggle if camera is on
             self.paused = not self.paused # Toggle pause state
@@ -60,6 +66,17 @@ class SignLanguageApp: # Define the main application class
             if ret: # If a frame is successfully captured
                 frame = cv2.flip(frame, 1) # Flip the frame horizontally for a mirror effect
                 img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # Convert the frame from BGR to RGB format
+
+                results = self.hands.process(img) # Process the frame with MediaPipe Hands
+                if results.multi_hand_landmarks: # If hands are detected
+                    for landmarks in results.multi_hand_landmarks: # Loop through detected hands
+                        mp_drawing.draw_landmarks(frame, landmarks, mp_hands.HAND_CONNECTIONS) # Draw landmarks on the frame
+                        landmark_list = [] # List to store landmark coordinates
+                        for lm in landmarks.landmark: # Loop through each landmark
+                            landmark_list.append((lm.x, lm.y)) # Append x, y coordinates to the list
+                        prediction = self.recognize_gesture(landmark_list) # Call the gesture recognition function
+                        self.predict_label.config(text=f"Prediction: {prediction}")  # Update the prediction label
+
                 img = Image.fromarray(img) # Convert the frame to a PIL image
                 imgtk = ImageTk.PhotoImage(image=img)  # Convert the PIL image to a PhotoImage for Tkinter
 
@@ -69,9 +86,19 @@ class SignLanguageApp: # Define the main application class
         if self.camera_on: # If camera is still on, keep looping
             self.root.after(10, self.update_frame) # Schedule the next frame update
 
+    def recognize_gesture(self, landmarks): # Gesture recognition function
+        thumb_tip = landmarks[4] # Thumb tip landmark
+        index_tip = landmarks[8] # Index finger tip landmark
+        distance = ((thumb_tip[0] - index_tip[0]) ** 2 + (thumb_tip[1] - index_tip[1]) ** 2) ** 0.5 # Calculate distance between thumb and index finger tips
+        if distance < 0.1: # If distance is less than a threshold, recognize as "OK" gesture
+            return "OK" 
+        else: # If distance is greater, recognize as "Not OK" gesture
+            return "Not Recognized"
+
     def __del__(self): # Destructor to release the video capture when the object is deleted
         if self.capture and self.capture.isOpened(): # Check if the capture is opened
             self.capture.release() # Release the video capture
+
 
 # Run the app
 root = tk.Tk() # Create the main window
